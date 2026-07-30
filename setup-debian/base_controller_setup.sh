@@ -1,20 +1,20 @@
 #!/bin/bash
 set -e   # abort on first error, half-configured node worse than none
 
-# Usage: ./base_controller_setup.sh [VERSION] [ENDPOINT]
-#   VERSION:  "latest" (default) or explicit e.g. "1.33.0", "v1.33.0", "1.33"
+# Usage: ./base_controller_setup.sh ENDPOINT [VERSION]
 #   ENDPOINT: hostname or IP to bake into certs/kubeconfig as the cluster's
-#             control-plane endpoint. Defaults to this node's hostname.
-#             Use a DNS name (or a load balancer's address) if you plan to
-#             grow into an HA control-plane later - see README.
+#             control-plane endpoint. Required - no safe default since it's
+#             baked into certs. Use a DNS name (or a load balancer's address)
+#             if you plan to grow into an HA control-plane later - see README.
+#   VERSION:  "latest" (default) or explicit e.g. "1.33.0", "v1.33.0", "1.33"
 usage() {
-    echo "Usage: $0 [VERSION] [ENDPOINT]"
+    echo "Usage: $0 ENDPOINT [VERSION]"
+    echo "  ENDPOINT   Control-plane endpoint (hostname or IP). Required."
+    echo "             Pass a DNS name or load balancer address to leave"
+    echo "             room for HA later."
     echo "  VERSION    Kubernetes version to install."
     echo "             'latest' (default) fetches the latest stable release."
     echo "             Or give explicit version, e.g. 1.33.0, v1.33.0, 1.33"
-    echo "  ENDPOINT   Control-plane endpoint (hostname or IP)."
-    echo "             Defaults to this node's hostname. Pass a DNS name or"
-    echo "             load balancer address to leave room for HA later."
     exit 1
 }
 
@@ -22,15 +22,20 @@ case "$1" in
     -h|--help) usage ;;
 esac
 
+# Endpoint is required (no safe default - it's baked into certs/kubeconfig,
+# see the HA note in README for why that choice matters).
+if [[ -z "$1" ]]; then
+    echo "Error: ENDPOINT (hostname or IP) is required." >&2
+    usage
+fi
+CONTROL_PLANE_ENDPOINT="$1"
+
 # Version arg lets you pin a cluster to a known-good release instead of
 # always drifting to whatever is newest (kubeadm join / upgrade paths care
 # about exact minor versions matching across nodes).
-K8S_VERSION="${1:-latest}"
+K8S_VERSION="${2:-latest}"
 
-# Endpoint arg lets you bake a stable name (or a bare IP) into the cluster's
-# certs/kubeconfig up front, instead of always defaulting to this node's own
-# hostname - see the HA note in README for why that choice matters.
-CONTROL_PLANE_ENDPOINT="${2:-$(hostname)}"
+SCRIPT_START=$(date +%s)
 
 if [[ "$K8S_VERSION" == "latest" ]]; then
     echo "Fetching latest stable Kubernetes version..."
@@ -210,4 +215,6 @@ if [[ "$ALLOW_CP_WORKLOADS" =~ ^[Yy]$ ]]; then
   kubectl taint nodes "$CONTROL_PLANE_ENDPOINT" node-role.kubernetes.io/control-plane:NoSchedule-
 fi
 
-echo "Kubernetes cluster setup is complete!"
+SCRIPT_END=$(date +%s)
+ELAPSED=$((SCRIPT_END - SCRIPT_START))
+echo "Kubernetes cluster setup is complete! Runtime: $((ELAPSED / 60))m $((ELAPSED % 60))s"
