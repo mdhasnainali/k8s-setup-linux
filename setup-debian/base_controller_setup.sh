@@ -204,6 +204,10 @@ kubectl apply -f https://github.com/coreos/flannel/raw/master/Documentation/kube
 # scheduled on it. Removed here for single-node clusters where the
 # control-plane must also run workloads; leave the taint in place if you'll
 # be joining worker nodes and want the control-plane workload-free.
-kubectl taint nodes $(hostname) node-role.kubernetes.io/control-plane:NoSchedule-
+
+read -p "Allow workload pods to schedule on this control-plane node? (single-node cluster: yes / joining workers later: no) [y/N]: " ALLOW_CP_WORKLOADS
+if [[ "$ALLOW_CP_WORKLOADS" =~ ^[Yy]$ ]]; then
+  kubectl taint nodes "$CONTROL_PLANE_ENDPOINT" node-role.kubernetes.io/control-plane:NoSchedule-
+fi
 
 echo "Kubernetes cluster setup is complete!"
