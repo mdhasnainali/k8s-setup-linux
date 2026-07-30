@@ -18,18 +18,17 @@ Sets up a Kubernetes **control-plane (master) node**: installs kubeadm/kubelet/k
 ```bash
 chmod +x base_controller_setup.sh
 
-./base_controller_setup.sh                                  # latest version, endpoint = this node's hostname
-./base_controller_setup.sh 1.33.0                           # pin an exact version
-./base_controller_setup.sh v1.33.0                          # "v" prefix optional
-./base_controller_setup.sh 1.33                             # major.minor only -> latest patch in that channel
-./base_controller_setup.sh latest k8s-cluster.mycompany.local  # custom control-plane endpoint (DNS name)
-./base_controller_setup.sh 1.33.0 10.0.1.50                 # custom control-plane endpoint (bare IP)
+./base_controller_setup.sh k8s-cluster.mycompany.local      # endpoint (DNS name), latest version
+./base_controller_setup.sh 10.0.1.50                        # endpoint (bare IP), latest version
+./base_controller_setup.sh k8s-cluster.mycompany.local 1.33.0   # pin an exact version
+./base_controller_setup.sh 10.0.1.50 v1.33.0                # "v" prefix optional
+./base_controller_setup.sh 10.0.1.50 1.33                   # major.minor only -> latest patch in that channel
 ./base_controller_setup.sh -h                                # show usage
 ```
 
 Why a version option: the Kubernetes apt repo (`pkgs.k8s.io`) is split into separate channels per minor version (`v1.33`, `v1.32`, ...) with no "all versions" feed. Passing an explicit version lets you reproduce a known-good setup or match an existing cluster's version instead of always drifting to whatever is newest. Default (`latest`) resolves via `https://dl.k8s.io/release/stable.txt`, upstream's own pointer to the current stable GA release.
 
-Why an endpoint option: the second arg controls what `--control-plane-endpoint` bakes into the cluster's certs/kubeconfig (see the HA note under Step 4 below). Defaults to `$(hostname)` if omitted. Pass a DNS name or load balancer address instead if you might grow into an HA control-plane later — switching afterward means regenerating certs, so it's cheaper to decide up front.
+Why an endpoint option: the first arg controls what `--control-plane-endpoint` bakes into the cluster's certs/kubeconfig (see the HA note under Step 4 below). Required — no safe default, since it's baked into certs. Pass a DNS name or load balancer address instead of a bare IP if you might grow into an HA control-plane later — switching afterward means regenerating certs, so it's cheaper to decide up front.
 
 If the exact patch you request isn't in the repo (already superseded, typo, etc.), the script logs a fallback message and installs the newest available package in that same minor channel instead of failing.
 
@@ -71,7 +70,8 @@ Script uses `set -e` — stops on first error, so it won't continue provisioning
 
 **Step 5 — Apply Flannel networking**
 - A fresh cluster has no CNI plugin, so pods stay stuck in `Pending`/`ContainerCreating` without one; Flannel is applied here to match the pod CIDR from step 4.
-- kubeadm taints the control-plane node by default so regular pods can't be scheduled on it. The taint is removed here for single-node clusters where the control-plane must also run workloads — leave it in place instead if you plan to join worker nodes and want the control-plane kept workload-free.
+- kubeadm taints the control-plane node by default so regular pods can't be scheduled on it. Script prompts — "Allow workload pods to schedule on this control-plane node?" — and removes the taint only on `y`. Answer yes for single-node clusters where the control-plane must also run workloads; answer no (default) if you plan to join worker nodes and want the control-plane kept workload-free.
+- Prints total script runtime (minutes/seconds) once setup completes.
 
 ### Notes / Caveats
 
