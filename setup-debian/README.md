@@ -33,4 +33,5 @@ See each script's doc page above for full usage, arguments, requirements, and a 
 
 ## Planned
 
+- CNI choice prompt in `base_controller_setup.sh` — ask user to pick Flannel, Calico, or Cilium at install time instead of hardcoding Flannel.
 - Additional cluster scripts (TBD)
