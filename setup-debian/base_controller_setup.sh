@@ -212,7 +212,7 @@ kubectl apply -f https://github.com/coreos/flannel/raw/master/Documentation/kube
 
 read -p "Allow workload pods to schedule on this control-plane node? (single-node cluster: yes / joining workers later: no) [y/N]: " ALLOW_CP_WORKLOADS
 if [[ "$ALLOW_CP_WORKLOADS" =~ ^[Yy]$ ]]; then
-  kubectl taint nodes "$CONTROL_PLANE_ENDPOINT" node-role.kubernetes.io/control-plane:NoSchedule-
+  kubectl taint nodes $(hostname) node-role.kubernetes.io/control-plane:NoSchedule-
 fi
 
 SCRIPT_END=$(date +%s)

@@ -76,7 +76,8 @@ sudo rm -rf /var/lib/containerd
 
 echo "Step 6: Remove Kubernetes and Docker apt repos/keys"
 sudo rm -f /etc/apt/sources.list.d/kubernetes.list
-sudo rm -f /etc/apt/sources.list.d/docker.list
+sudo rm -f /etc/apt/sources.list.d/docker*.list
+sudo rm -f /etc/apt/sources.list.d/docker*.sources
 sudo rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 sudo rm -f /etc/apt/keyrings/docker-archive-keyring.gpg
 sudo apt-get update -y
