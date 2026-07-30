@@ -35,12 +35,14 @@ Script uses `set -e` — stops on first error, so it won't continue provisioning
 ## What it does, and why
 
 **Step 1 — Install kubelet, kubeadm, kubectl**
+
 - Adds `/etc/apt/keyrings` (the current apt-recommended place for repo signing keys, replacing the deprecated `apt-key add`) and imports the Kubernetes repo's signing key so apt can verify packages.
 - Registers the repo for the resolved `v<major.minor>` channel.
 - The k8s apt repo appends its own build revision to versions (e.g. `1.33.0-1.1`), so the script looks up the exact matching package string via `apt-cache madison` rather than guessing it.
 - `apt-mark hold` pins the installed versions so a routine `apt upgrade` can't silently bump them — version skew between kubelet/kubeadm/kubectl (or across nodes) breaks clusters.
 
 **Step 2 — Disable swap, load kernel modules**
+
 - kubelet refuses to start with swap on (memory limits become unenforceable), so swap is turned off and commented out of `/etc/fstab` so it stays off after reboot.
 - `overlay`: filesystem driver containerd uses for container image layers.
 - `br_netfilter`: makes bridged network traffic visible to iptables — without it, pod-to-pod traffic can bypass kube-proxy's rules.
@@ -48,11 +50,13 @@ Script uses `set -e` — stops on first error, so it won't continue provisioning
 - sysctl params (`bridge-nf-call-iptables`/`ip6tables`, `ip_forward`) are what actually make bridged-pod traffic filterable and let the node route packets between interfaces — required for pod/service networking to work at all.
 
 **Step 3 — Install and configure containerd**
+
 - Skips reinstalling containerd if it's already present, so re-running the script on a provisioned node is safe.
 - containerd itself ships from Docker's apt repo, not the Kubernetes one, hence the separate repo/key setup.
 - `SystemdCgroup = true` is set because kubelet manages cgroups via systemd; if containerd's cgroup driver doesn't match, kubelet fails to start.
 
 **Step 4 — Pull images and initialize the cluster**
+
 - Images are pre-pulled before `kubeadm init` so cluster bring-up doesn't stall/timeout on slow image pulls.
 - `--pod-network-cidr=10.244.0.0/16` must match what the CNI plugin (Flannel, step 5) expects.
 - `--upload-certs` uploads control-plane certs to a Secret so additional control-plane nodes could join later without manually copying certs.
@@ -67,6 +71,7 @@ Script uses `set -e` — stops on first error, so it won't continue provisioning
 - Admin kubeconfig is copied to `$HOME/.kube/config` and chowned to the invoking user so `kubectl` works without `sudo` afterward.
 
 **Step 5 — Apply Flannel networking**
+
 - A fresh cluster has no CNI plugin, so pods stay stuck in `Pending`/`ContainerCreating` without one; Flannel is applied here to match the pod CIDR from step 4.
 - kubeadm taints the control-plane node by default so regular pods can't be scheduled on it. Script prompts — "Allow workload pods to schedule on this control-plane node?" — and removes the taint only on `y`. Answer yes for single-node clusters where the control-plane must also run workloads; answer no (default) if you plan to join worker nodes and want the control-plane kept workload-free.
 - Prints total script runtime (minutes/seconds) once setup completes.
