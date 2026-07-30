@@ -71,6 +71,17 @@ Script uses `set -e` — stops on first error, so it won't continue provisioning
 - kubeadm taints the control-plane node by default so regular pods can't be scheduled on it. Script prompts — "Allow workload pods to schedule on this control-plane node?" — and removes the taint only on `y`. Answer yes for single-node clusters where the control-plane must also run workloads; answer no (default) if you plan to join worker nodes and want the control-plane kept workload-free.
 - Prints total script runtime (minutes/seconds) once setup completes.
 
+### About Flannel (CNI choice)
+
+- **Flannel** is a lightweight Layer 3 overlay network plugin — it hands each node a unique pod subnet so pods can reach each other across different servers.
+- `kubeadm` installs no CNI by default — nodes sit in `NotReady` until one is applied. This script picks Flannel; the cluster works identically with any other CNI substituted at Step 5.
+- Alternatives worth knowing:
+  - **Calico** — heavily used in production for enterprise-grade network policies.
+  - **Cilium** — fastest-growing modern choice, built on eBPF for high performance; default CNI on GKE.
+  - **AWS VPC CNI** — default on EKS. **Azure CNI** — default on AKS.
+  - Flannel remains a common default for lightweight dev setups (e.g. K3s) — simple, no policy engine.
+- Swapping CNIs: remove Flannel's manifest and any leftover `cni0`/`flannel.1` interfaces (see `base_controller_cleanup.sh` Step 2), then apply the replacement CNI's manifest instead — just keep its pod CIDR expectation matching `--pod-network-cidr` in Step 4 above.
+
 ## Notes / Caveats
 
 - `--ignore-preflight-errors=all` bypasses preflight checks — fine for lab/dev, review before prod use.
