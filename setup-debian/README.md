@@ -18,14 +18,18 @@ Sets up a Kubernetes **control-plane (master) node**: installs kubeadm/kubelet/k
 ```bash
 chmod +x base_controller_setup.sh
 
-./base_controller_setup.sh              # latest stable Kubernetes release
-./base_controller_setup.sh 1.33.0       # pin an exact version
-./base_controller_setup.sh v1.33.0      # "v" prefix optional
-./base_controller_setup.sh 1.33         # major.minor only -> latest patch in that channel
-./base_controller_setup.sh -h           # show usage
+./base_controller_setup.sh                                  # latest version, endpoint = this node's hostname
+./base_controller_setup.sh 1.33.0                           # pin an exact version
+./base_controller_setup.sh v1.33.0                          # "v" prefix optional
+./base_controller_setup.sh 1.33                             # major.minor only -> latest patch in that channel
+./base_controller_setup.sh latest k8s-cluster.mycompany.local  # custom control-plane endpoint (DNS name)
+./base_controller_setup.sh 1.33.0 10.0.1.50                 # custom control-plane endpoint (bare IP)
+./base_controller_setup.sh -h                                # show usage
 ```
 
 Why a version option: the Kubernetes apt repo (`pkgs.k8s.io`) is split into separate channels per minor version (`v1.33`, `v1.32`, ...) with no "all versions" feed. Passing an explicit version lets you reproduce a known-good setup or match an existing cluster's version instead of always drifting to whatever is newest. Default (`latest`) resolves via `https://dl.k8s.io/release/stable.txt`, upstream's own pointer to the current stable GA release.
+
+Why an endpoint option: the second arg controls what `--control-plane-endpoint` bakes into the cluster's certs/kubeconfig (see the HA note under Step 4 below). Defaults to `$(hostname)` if omitted. Pass a DNS name or load balancer address instead if you might grow into an HA control-plane later — switching afterward means regenerating certs, so it's cheaper to decide up front.
 
 If the exact patch you request isn't in the repo (already superseded, typo, etc.), the script logs a fallback message and installs the newest available package in that same minor channel instead of failing.
 
@@ -56,6 +60,12 @@ Script uses `set -e` — stops on first error, so it won't continue provisioning
 - `--pod-network-cidr=10.244.0.0/16` must match what the CNI plugin (Flannel, step 5) expects.
 - `--upload-certs` uploads control-plane certs to a Secret so additional control-plane nodes could join later without manually copying certs.
 - `--control-plane-endpoint=$(hostname)` uses the hostname rather than a bare IP, keeping the option open to later grow into an HA control-plane behind a stable name.
+  - **HA (High Availability)** means running multiple control-plane nodes (typically 3, an odd number so etcd keeps quorum) instead of one, so the cluster survives a node dying. With a single control-plane node, that node crashing takes down the whole API — no `kubectl`, nothing new gets scheduled or healed, even though already-running pods keep going. With HA, losing one of three nodes still leaves two serving the API/etcd, so the cluster keeps working. A load balancer or DNS name in front of the nodes routes traffic to whichever are alive — which is exactly why the hostname (vs. bare IP) choice below matters.
+  - Every cert and kubeconfig kubeadm generates bakes in whatever address you pass here — it becomes "the cluster's address" as far as clients are concerned.
+  - **Bare IP** (e.g. `--control-plane-endpoint=192.168.1.50`): fine for a single node. Add more control-plane nodes later for HA and that IP is just one of several — it's not a shared front door. Switching means regenerating certs and reconfiguring every client, with likely downtime.
+  - **Hostname** (e.g. `--control-plane-endpoint=k8s-cluster.mycompany.local`): certs/kubeconfigs only ever reference the name, not what's behind it. Today DNS points that name straight at the one node. Add more control-plane nodes later, drop a load balancer in front of them, and just repoint the DNS name at the load balancer — no cert regen, no client reconfig.
+  - Analogy: bare IP is like handing out your friend's home address directly. A hostname is like handing out a PO box number — if your friend moves, you update the PO box's forwarding, and nobody holding "the address" needs to change anything.
+  - Trade-off: the hostname has to actually resolve (DNS record, or `/etc/hosts` on every node/client) — a bare IP has no such dependency and just works.
 - `--ignore-preflight-errors=all` skips kubeadm's preflight checks — convenient for VMs/lab boxes with non-standard resources, but worth revisiting before production use.
 - Admin kubeconfig is copied to `$HOME/.kube/config` and chowned to the invoking user so `kubectl` works without `sudo` afterward.
 

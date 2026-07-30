@@ -1,13 +1,20 @@
 #!/bin/bash
 set -e   # abort on first error, half-configured node worse than none
 
-# Usage: ./base_controller_setup.sh [VERSION]
-#   VERSION: "latest" (default) or explicit e.g. "1.33.0", "v1.33.0", "1.33"
+# Usage: ./base_controller_setup.sh [VERSION] [ENDPOINT]
+#   VERSION:  "latest" (default) or explicit e.g. "1.33.0", "v1.33.0", "1.33"
+#   ENDPOINT: hostname or IP to bake into certs/kubeconfig as the cluster's
+#             control-plane endpoint. Defaults to this node's hostname.
+#             Use a DNS name (or a load balancer's address) if you plan to
+#             grow into an HA control-plane later - see README.
 usage() {
-    echo "Usage: $0 [VERSION]"
-    echo "  VERSION   Kubernetes version to install."
-    echo "            'latest' (default) fetches the latest stable release."
-    echo "            Or give explicit version, e.g. 1.33.0, v1.33.0, 1.33"
+    echo "Usage: $0 [VERSION] [ENDPOINT]"
+    echo "  VERSION    Kubernetes version to install."
+    echo "             'latest' (default) fetches the latest stable release."
+    echo "             Or give explicit version, e.g. 1.33.0, v1.33.0, 1.33"
+    echo "  ENDPOINT   Control-plane endpoint (hostname or IP)."
+    echo "             Defaults to this node's hostname. Pass a DNS name or"
+    echo "             load balancer address to leave room for HA later."
     exit 1
 }
 
@@ -19,6 +26,11 @@ esac
 # always drifting to whatever is newest (kubeadm join / upgrade paths care
 # about exact minor versions matching across nodes).
 K8S_VERSION="${1:-latest}"
+
+# Endpoint arg lets you bake a stable name (or a bare IP) into the cluster's
+# certs/kubeconfig up front, instead of always defaulting to this node's own
+# hostname - see the HA note in README for why that choice matters.
+CONTROL_PLANE_ENDPOINT="${2:-$(hostname)}"
 
 if [[ "$K8S_VERSION" == "latest" ]]; then
     echo "Fetching latest stable Kubernetes version..."
@@ -34,6 +46,7 @@ fi
 # there's no single "all versions" repo, so we need major.minor separately.
 K8S_MINOR="$(echo "$K8S_VERSION" | cut -d. -f1,2)"
 echo "Target Kubernetes version: $K8S_VERSION (channel v$K8S_MINOR)"
+echo "Control-plane endpoint: $CONTROL_PLANE_ENDPOINT"
 
 echo "Step 1: Install kubectl, kubeadm, and kubelet $K8S_VERSION"
 
@@ -170,7 +183,7 @@ sudo kubeadm init \
   --pod-network-cidr=10.244.0.0/16 \
   --upload-certs \
   --kubernetes-version="v${K8S_VERSION}" \
-  --control-plane-endpoint="$(hostname)" \
+  --control-plane-endpoint="$CONTROL_PLANE_ENDPOINT" \
   --ignore-preflight-errors=all \
   --cri-socket unix:///run/containerd/containerd.sock
 
