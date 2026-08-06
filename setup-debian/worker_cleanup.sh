@@ -15,10 +15,18 @@ case "$1" in
     -h|--help) usage ;;
 esac
 
-read -p "This will reset kubeadm and purge Kubernetes/containerd from this node. Continue? [y/N]: " CONFIRM
+read -p "This will reset kubeadm and remove Kubernetes from this node. Continue? [y/N]: " CONFIRM
 if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
     echo "Aborted."
     exit 0
+fi
+
+read -p "Also purge containerd (container runtime) and its repo/keys? [y/N]: " REMOVE_RUNTIME
+if [[ "$REMOVE_RUNTIME" =~ ^[Yy]$ ]]; then
+    PURGE_RUNTIME=true
+else
+    PURGE_RUNTIME=false
+    echo "Skipping containerd removal - runtime stays installed."
 fi
 
 SCRIPT_START=$(date +%s)
@@ -62,21 +70,27 @@ else
 fi
 
 echo "Step 5: Purge containerd and its config"
-if dpkg -l | grep -q '^ii\s\+containerd.io'; then
-    sudo systemctl stop containerd 2>/dev/null || true
-    sudo apt-get purge -y containerd.io
+if [ "$PURGE_RUNTIME" = true ]; then
+    if dpkg -l | grep -q '^ii\s\+containerd.io'; then
+        sudo systemctl stop containerd 2>/dev/null || true
+        sudo apt-get purge -y containerd.io
+    else
+        echo "containerd.io not installed, skipping."
+    fi
+    sudo rm -rf /etc/containerd
+    sudo rm -rf /var/lib/containerd
 else
-    echo "containerd.io not installed, skipping."
+    echo "Skipped (user opted to keep container runtime)."
 fi
-sudo rm -rf /etc/containerd
-sudo rm -rf /var/lib/containerd
 
-echo "Step 6: Remove Kubernetes and Docker apt repos/keys"
+echo "Step 6: Remove Kubernetes apt repo/keys"
 sudo rm -f /etc/apt/sources.list.d/kubernetes.list
-sudo rm -f /etc/apt/sources.list.d/docker*.list
-sudo rm -f /etc/apt/sources.list.d/docker*.sources
 sudo rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-sudo rm -f /etc/apt/keyrings/docker-archive-keyring.gpg
+if [ "$PURGE_RUNTIME" = true ]; then
+    sudo rm -f /etc/apt/sources.list.d/docker*.list
+    sudo rm -f /etc/apt/sources.list.d/docker*.sources
+    sudo rm -f /etc/apt/keyrings/docker-archive-keyring.gpg
+fi
 sudo apt-get update -y
 
 echo "Step 7: Restore swap and kernel/sysctl changes"
