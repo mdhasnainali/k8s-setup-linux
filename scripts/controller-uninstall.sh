@@ -63,7 +63,7 @@ if command -v iptables &> /dev/null; then
 fi
 
 echo "Step 4: Purge kubelet, kubeadm, kubectl"
-if dpkg -l | grep -qE '^ii\s+(kubelet|kubeadm|kubectl)\s'; then
+if dpkg -l | grep -qE '^[hi]i\s+(kubelet|kubeadm|kubectl)\s'; then
     # Packages are held (apt-mark hold in setup) - unhold before purge so
     # apt will actually remove them instead of refusing.
     sudo apt-mark unhold kubelet kubeadm kubectl 2>/dev/null || true
