@@ -5,7 +5,7 @@ A CLI for bootstrapping (and tearing down) a `kubeadm`-based Kubernetes cluster 
 ## Install
 
 ```bash
-git clone <this-repo-url> k8s-setup-linux
+git clone https://github.com/mdhasnainali/k8s-setup-linux.git k8s-setup-linux
 cd k8s-setup-linux
 ./install.sh                # symlinks bin/k8s-setup into /usr/local/bin
 k8s-setup help
