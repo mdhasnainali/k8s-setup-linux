@@ -28,6 +28,9 @@ k8s-setup controller install <endpoint> [version]
 # Print a fresh kubeadm join command for worker nodes (run on control-plane)
 k8s-setup controller join-command
 
+# Print a fresh kubeadm join command for a new master/control-plane node (run on existing control-plane)
+k8s-setup controller join-master-command
+
 # Tear a control-plane node back down
 k8s-setup controller uninstall
 
@@ -45,6 +48,7 @@ k8s-setup worker uninstall
 |---|---|---|
 | `k8s-setup controller install` | Installs kubeadm/kubelet/kubectl, configures containerd, runs `kubeadm init`, applies Flannel networking. | [docs/controller-install.md](docs/controller-install.md) |
 | `k8s-setup controller join-command` | Prints a fresh `kubeadm join` command (~24h validity) for worker nodes. | [scripts/controller-join-command.sh](scripts/controller-join-command.sh) |
+| `k8s-setup controller join-master-command` | Prints a fresh `kubeadm join --control-plane` command (token ~24h, cert key ~2h) for new master nodes. | [scripts/controller-join-master-command.sh](scripts/controller-join-master-command.sh) |
 | `k8s-setup controller uninstall` | Reverses `controller install`: `kubeadm reset`, purges kubelet/kubeadm/kubectl/containerd, removes their repos/config, restores swap/sysctl/kernel-module changes. | [docs/controller-uninstall.md](docs/controller-uninstall.md) |
 | `k8s-setup worker install` | Installs kubeadm/kubelet/kubectl, configures containerd, pre-pulls images. Stops short of `kubeadm join`. | [docs/worker-install.md](docs/worker-install.md) |
 | `k8s-setup worker uninstall` | Reverses `worker install` (and any `kubeadm join`): resets kubeadm, purges kubelet/kubeadm/kubectl/containerd, removes their repos/config, restores swap/sysctl/kernel-module changes. | [docs/worker-uninstall.md](docs/worker-uninstall.md) |

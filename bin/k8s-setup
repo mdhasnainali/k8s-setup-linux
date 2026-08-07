@@ -27,6 +27,7 @@ Usage:
   k8s-setup controller install <endpoint> [version]   Provision this node as control-plane
   k8s-setup controller uninstall                       Tear down a control-plane node
   k8s-setup controller join-command                    Print a kubeadm join command for workers
+  k8s-setup controller join-master-command              Print a kubeadm join command for new masters
 
   k8s-setup worker install [version]                   Prep this node as a worker
   k8s-setup worker uninstall                            Tear down a worker node
@@ -44,6 +45,7 @@ case "$1" in
             install)   shift 2; exec "$SCRIPTS_DIR/controller-install.sh" "$@" ;;
             uninstall) shift 2; exec "$SCRIPTS_DIR/controller-uninstall.sh" "$@" ;;
             join-command) shift 2; exec "$SCRIPTS_DIR/controller-join-command.sh" "$@" ;;
+            join-master-command) shift 2; exec "$SCRIPTS_DIR/controller-join-master-command.sh" "$@" ;;
             *) echo "Error: unknown controller subcommand '$2'" >&2; usage; exit 1 ;;
         esac
         ;;
