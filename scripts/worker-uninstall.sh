@@ -1,12 +1,13 @@
 #!/bin/bash
 set -e   # abort on first error, half-cleaned node worse than none
 
-# Usage: ./worker_cleanup.sh
-# Reverses worker_setup.sh: resets kubeadm, purges kubelet/kubeadm/kubectl/
+# Usage: k8s-setup worker uninstall
+# Reverses worker-install.sh: resets kubeadm, purges kubelet/kubeadm/kubectl/
 # containerd, removes repos/keys/config, restores swap, and drops the
 # sysctl/kernel-module changes made for pod networking.
 usage() {
-    echo "  Tears down a worker node set up by worker_setup.sh."
+    echo "Usage: k8s-setup worker uninstall"
+    echo "  Tears down a worker node set up by 'k8s-setup worker install'."
     echo "  Run as the regular (non-root) user - script uses sudo internally."
     exit 1
 }

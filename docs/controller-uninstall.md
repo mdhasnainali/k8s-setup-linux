@@ -1,22 +1,20 @@
-# `worker_cleanup.sh`
+# `k8s-setup controller uninstall`
 
-Reverses [`worker_setup.sh`](worker-setup.md) (and any subsequent `kubeadm join`) on a worker node: resets kubeadm, purges kubelet/kubeadm/kubectl/containerd, removes their apt repos/keys/config, and restores swap/sysctl/kernel-module changes made during setup — so the node returns to a pre-setup state.
+Reverses [`k8s-setup controller install`](controller-install.md) on a control-plane node: resets kubeadm, purges kubelet/kubeadm/kubectl/containerd, removes their apt repos/keys/config, and restores swap/sysctl/kernel-module changes made during setup — so the node returns to a pre-setup state.
 
 [← Back to README](../README.md)
 
 ## Requirements
 
-- Same host that ran `worker_setup.sh` (or an equivalently-provisioned Ubuntu/Debian node)
+- Same host that ran `k8s-setup controller install` (or an equivalently-provisioned Ubuntu/Debian node)
 - Root/sudo access
 - Run as the regular (non-root) user — script uses `sudo` internally
 
 ## Usage
 
 ```bash
-chmod +x worker_cleanup.sh
-
-./worker_cleanup.sh   # prompts for confirmation, then tears down the node
-./worker_cleanup.sh -h   # show usage
+k8s-setup controller uninstall   # prompts for confirmation, then tears down the node
+k8s-setup controller uninstall -h   # show usage
 ```
 
 Script prompts for confirmation before doing anything, since `kubeadm reset` and package purges aren't easily undone. Uses `set -e` like the setup script, so it stops on first error rather than continuing a partial teardown.
@@ -24,13 +22,14 @@ Script prompts for confirmation before doing anything, since `kubeadm reset` and
 ## What it does, and why
 
 **Step 1 — `kubeadm reset`**
-- Undoes a prior `kubeadm join`: stops kubelet and cleans up `/etc/kubernetes`. Same `--cri-socket` as setup so it targets the right containerd sandbox. Skipped if `kubeadm` isn't installed (already cleaned up, setup never ran, or the node never joined).
+- Undoes most of what `kubeadm init` set up: stops kubelet, cleans up `/etc/kubernetes`, and tears down local etcd data. Same `--cri-socket` as setup so it targets the right containerd sandbox. Skipped if `kubeadm` isn't installed (already cleaned up, or setup never ran).
 
-**Step 2 — Remove CNI leftovers**
-- Joining a cluster writes CNI plugin state to the node; `kubeadm reset` doesn't touch it, so `/etc/cni/net.d` and `/var/lib/cni` are removed directly, along with the `cni0`/`flannel.1` network interfaces the CNI plugin created.
+**Step 2 — Remove CNI and kube configs**
+- `kubeadm reset` doesn't touch CNI plugin state, so Flannel's `/etc/cni/net.d` and `/var/lib/cni` are removed directly, along with the `cni0`/`flannel.1` network interfaces it created.
+- Removes `$HOME/.kube`, the admin kubeconfig setup copied in at Step 4.
 
 **Step 3 — Flush iptables/ipvs rules**
-- kube-proxy's iptables rules (NAT/mangle tables, custom chains) survive `kubeadm reset` and can conflict with a future join on the same node, so they're flushed here.
+- kube-proxy's iptables rules (NAT/mangle tables, custom chains) survive `kubeadm reset` and can conflict with a future cluster on the same node, so they're flushed here.
 
 **Step 4 — Purge kubelet, kubeadm, kubectl**
 - Setup pins these with `apt-mark hold` so routine upgrades can't touch them; cleanup unholds first, or `apt-get purge` would refuse to remove them.

@@ -1,10 +1,17 @@
 #!/bin/bash
 set -e   # abort on first error, half-configured node worse than none
 
-# Usage: ./worker_setup.sh [VERSION]
-#   VERSION: "latest" (default) or explicit e.g. "1.33.0", "v1.33.0", "1.33"
+# Usage: k8s-setup controller install ENDPOINT [VERSION]
+#   ENDPOINT: hostname or IP to bake into certs/kubeconfig as the cluster's
+#             control-plane endpoint. Required - no safe default since it's
+#             baked into certs. Use a DNS name (or a load balancer's address)
+#             if you plan to grow into an HA control-plane later - see README.
+#   VERSION:  "latest" (default) or explicit e.g. "1.33.0", "v1.33.0", "1.33"
 usage() {
-    echo "Usage: $0 [VERSION]"
+    echo "Usage: k8s-setup controller install ENDPOINT [VERSION]"
+    echo "  ENDPOINT   Control-plane endpoint (hostname or IP). Required."
+    echo "             Pass a DNS name or load balancer address to leave"
+    echo "             room for HA later."
     echo "  VERSION    Kubernetes version to install."
     echo "             'latest' (default) fetches the latest stable release."
     echo "             Or give explicit version, e.g. 1.33.0, v1.33.0, 1.33"
@@ -15,11 +22,18 @@ case "$1" in
     -h|--help) usage ;;
 esac
 
-# Version arg lets you pin a node to a known-good release instead of always
-# drifting to whatever is newest (kubeadm join / upgrade paths care about
-# exact minor versions matching across nodes - keep this in sync with the
-# control-plane's version).
-K8S_VERSION="${1:-latest}"
+# Endpoint is required (no safe default - it's baked into certs/kubeconfig,
+# see the HA note in README for why that choice matters).
+if [[ -z "$1" ]]; then
+    echo "Error: ENDPOINT (hostname or IP) is required." >&2
+    usage
+fi
+CONTROL_PLANE_ENDPOINT="$1"
+
+# Version arg lets you pin a cluster to a known-good release instead of
+# always drifting to whatever is newest (kubeadm join / upgrade paths care
+# about exact minor versions matching across nodes).
+K8S_VERSION="${2:-latest}"
 
 SCRIPT_START=$(date +%s)
 
@@ -37,6 +51,7 @@ fi
 # there's no single "all versions" repo, so we need major.minor separately.
 K8S_MINOR="$(echo "$K8S_VERSION" | cut -d. -f1,2)"
 echo "Target Kubernetes version: $K8S_VERSION (channel v$K8S_MINOR)"
+echo "Control-plane endpoint: $CONTROL_PLANE_ENDPOINT"
 
 echo "Step 1: Install kubectl, kubeadm, and kubelet $K8S_VERSION"
 
@@ -67,8 +82,8 @@ if [[ -z "$PKG_VERSION" ]]; then
     echo "Exact package for $K8S_VERSION not found in v$K8S_MINOR channel, falling back to latest available in that channel."
     PKG_VERSION=$(apt-cache madison kubeadm | head -1 | awk '{print $3}')
 fi
-# Re-derive K8S_VERSION from the resolved package so the image pull below
-# always requests the version that's actually installed here.
+# Re-derive K8S_VERSION from the resolved package so kubeadm init/pull later
+# (Step 4) always requests the version that's actually installed here.
 K8S_VERSION=$(echo "$PKG_VERSION" | cut -d- -f1)
 echo "Installing kubelet/kubeadm/kubectl $PKG_VERSION"
 
@@ -151,16 +166,55 @@ sudo systemctl restart containerd
 sudo systemctl enable containerd
 
 
-# Enable kubelet so it starts on boot (kubeadm join later starts it too, but
+# Enable kubelet so it starts on boot (kubeadm init below starts it too, but
 # this ensures it survives a reboot).
 sudo systemctl enable kubelet
 
-echo "Step 4: Pull Kubernetes images"
+echo "Step 4: Pull Kubernetes images and init cluster"
 
-# Pre-pull images so a subsequent `kubeadm join` doesn't stall/timeout on
-# slow network pulls when actually joining the cluster.
+# Pre-pull images first so `kubeadm init` doesn't stall/timeout on slow
+# network pulls during the actual cluster bring-up.
 sudo kubeadm config images pull --cri-socket unix:///run/containerd/containerd.sock --kubernetes-version "v${K8S_VERSION}"
+
+# Initialize cluster
+# --pod-network-cidr: must match what the CNI plugin (Flannel, step 5) expects
+# --upload-certs: uploads control-plane certs to a Secret so additional
+#   control-plane nodes can join later without manually copying certs
+# --control-plane-endpoint: use hostname rather than a bare IP so the option
+#   to grow into an HA control-plane behind a stable name stays open
+# --ignore-preflight-errors=all: skip kubeadm's preflight checks (useful for
+#   VMs/lab environments with non-standard resources); revisit before prod
+sudo kubeadm init \
+  --pod-network-cidr=10.244.0.0/16 \
+  --upload-certs \
+  --kubernetes-version="v${K8S_VERSION}" \
+  --control-plane-endpoint="$CONTROL_PLANE_ENDPOINT" \
+  --ignore-preflight-errors=all \
+  --cri-socket unix:///run/containerd/containerd.sock
+
+# Setup kubeconfig for user - copy the admin credentials kubeadm generated
+# into the invoking user's home so `kubectl` works without sudo afterwards.
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+export KUBECONFIG=$HOME/.kube/config
+
+echo "Step 5: Apply Flannel Network"
+
+# A fresh cluster has no CNI plugin - pods stay stuck in Pending/ContainerCreating
+# without one. Flannel is applied here to match the pod-network-cidr above.
+kubectl apply -f https://github.com/coreos/flannel/raw/master/Documentation/kube-flannel.yml
+
+# By default kubeadm taints the control-plane node so regular pods can't be
+# scheduled on it. Removed here for single-node clusters where the
+# control-plane must also run workloads; leave the taint in place if you'll
+# be joining worker nodes and want the control-plane workload-free.
+
+read -p "Allow workload pods to schedule on this control-plane node? (single-node cluster: yes / joining workers later: no) [y/N]: " ALLOW_CP_WORKLOADS
+if [[ "$ALLOW_CP_WORKLOADS" =~ ^[Yy]$ ]]; then
+  kubectl taint nodes $(hostname) node-role.kubernetes.io/control-plane:NoSchedule-
+fi
 
 SCRIPT_END=$(date +%s)
 ELAPSED=$((SCRIPT_END - SCRIPT_START))
-echo "Worker node prep complete! Run 'kubeadm join ...' (from the control-plane's kubeadm init output) to join this node to the cluster. Runtime: $((ELAPSED / 60))m $((ELAPSED % 60))s"
+echo "Kubernetes cluster setup is complete! Runtime: $((ELAPSED / 60))m $((ELAPSED % 60))s"

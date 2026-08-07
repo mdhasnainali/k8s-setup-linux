@@ -1,13 +1,13 @@
 #!/bin/bash
 set -e   # abort on first error, half-cleaned node worse than none
 
-# Usage: ./base_controller_cleanup.sh
-# Reverses base_controller_setup.sh: resets kubeadm, purges kubelet/kubeadm/
+# Usage: k8s-setup controller uninstall
+# Reverses controller-install.sh: resets kubeadm, purges kubelet/kubeadm/
 # kubectl/containerd, removes repos/keys/config, restores swap, and drops the
 # sysctl/kernel-module changes made for pod networking.
 usage() {
-    echo "Usage: $0"
-    echo "  Tears down a control-plane node set up by base_controller_setup.sh."
+    echo "Usage: k8s-setup controller uninstall"
+    echo "  Tears down a control-plane node set up by 'k8s-setup controller install'."
     echo "  Run as the regular (non-root) user - script uses sudo internally."
     exit 1
 }

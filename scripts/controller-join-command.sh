@@ -1,10 +1,10 @@
 #!/bin/bash
 set -e   # abort on first error, half-printed command worse than none
 
-# Usage: ./get_join_woker_link.sh
+# Usage: k8s-setup controller join-command
 # Run on control-plane node. Prints kubeadm join command worker nodes need
 # to run to join cluster. Token/cert-hash expire (default 24h) - re-run
-# this script to get fresh command if old one stops working.
+# this command to get fresh output if old one stops working.
 
 if ! command -v kubeadm &> /dev/null
 then

@@ -1,4 +1,4 @@
-# `base_controller_setup.sh`
+# `k8s-setup controller install`
 
 Sets up a Kubernetes **control-plane (master) node**: installs kubeadm/kubelet/kubectl, configures containerd, initializes the cluster, and applies Flannel networking.
 
@@ -14,15 +14,15 @@ Sets up a Kubernetes **control-plane (master) node**: installs kubeadm/kubelet/k
 ## Usage
 
 ```bash
-chmod +x base_controller_setup.sh
-
-./base_controller_setup.sh k8s-cluster.mycompany.local      # endpoint (DNS name), latest version
-./base_controller_setup.sh 10.0.1.50                        # endpoint (bare IP), latest version
-./base_controller_setup.sh k8s-cluster.mycompany.local 1.33.0   # pin an exact version
-./base_controller_setup.sh 10.0.1.50 v1.33.0                # "v" prefix optional
-./base_controller_setup.sh 10.0.1.50 1.33                   # major.minor only -> latest patch in that channel
-./base_controller_setup.sh -h                                # show usage
+k8s-setup controller install k8s-cluster.mycompany.local      # endpoint (DNS name), latest version
+k8s-setup controller install 10.0.1.50                        # endpoint (bare IP), latest version
+k8s-setup controller install k8s-cluster.mycompany.local 1.33.0   # pin an exact version
+k8s-setup controller install 10.0.1.50 v1.33.0                # "v" prefix optional
+k8s-setup controller install 10.0.1.50 1.33                   # major.minor only -> latest patch in that channel
+k8s-setup controller install -h                                # show usage
 ```
+
+Runs `scripts/controller-install.sh` under the hood — that script can also be called directly if you're not using the CLI.
 
 Why a version option: the Kubernetes apt repo (`pkgs.k8s.io`) is split into separate channels per minor version (`v1.33`, `v1.32`, ...) with no "all versions" feed. Passing an explicit version lets you reproduce a known-good setup or match an existing cluster's version instead of always drifting to whatever is newest. Default (`latest`) resolves via `https://dl.k8s.io/release/stable.txt`, upstream's own pointer to the current stable GA release.
 
@@ -85,7 +85,7 @@ Script uses `set -e` — stops on first error, so it won't continue provisioning
   - **Cilium** — fastest-growing modern choice, built on eBPF for high performance; default CNI on GKE.
   - **AWS VPC CNI** — default on EKS. **Azure CNI** — default on AKS.
   - Flannel remains a common default for lightweight dev setups (e.g. K3s) — simple, no policy engine.
-- Swapping CNIs: remove Flannel's manifest and any leftover `cni0`/`flannel.1` interfaces (see `base_controller_cleanup.sh` Step 2), then apply the replacement CNI's manifest instead — just keep its pod CIDR expectation matching `--pod-network-cidr` in Step 4 above.
+- Swapping CNIs: remove Flannel's manifest and any leftover `cni0`/`flannel.1` interfaces (see `k8s-setup controller uninstall` Step 2), then apply the replacement CNI's manifest instead — just keep its pod CIDR expectation matching `--pod-network-cidr` in Step 4 above.
 
 ## Notes / Caveats
 

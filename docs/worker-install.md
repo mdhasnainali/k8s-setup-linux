@@ -1,4 +1,4 @@
-# `worker_setup.sh`
+# `k8s-setup worker install`
 
 Preps a Kubernetes **worker node**: installs kubeadm/kubelet/kubectl, disables swap, configures containerd, and pre-pulls Kubernetes images. Stops short of `kubeadm join` — run the join command from the control-plane's `kubeadm init` output afterward to actually add the node to the cluster.
 
@@ -14,25 +14,23 @@ Preps a Kubernetes **worker node**: installs kubeadm/kubelet/kubectl, disables s
 ## Usage
 
 ```bash
-chmod +x worker_setup.sh
-
-./worker_setup.sh              # latest version
-./worker_setup.sh 1.33.0       # pin an exact version
-./worker_setup.sh v1.33.0      # "v" prefix optional
-./worker_setup.sh 1.33         # major.minor only -> latest patch in that channel
-./worker_setup.sh -h           # show usage
+k8s-setup worker install              # latest version
+k8s-setup worker install 1.33.0       # pin an exact version
+k8s-setup worker install v1.33.0      # "v" prefix optional
+k8s-setup worker install 1.33         # major.minor only -> latest patch in that channel
+k8s-setup worker install -h           # show usage
 ```
 
-No endpoint argument — this script never bakes a control-plane address into anything (that happens on the control-plane during `kubeadm init`, and on this node when you later run `kubeadm join` with the token/endpoint it gives you).
+No endpoint argument — this command never bakes a control-plane address into anything (that happens on the control-plane during `kubeadm init`, and on this node when you later run `kubeadm join` with the token/endpoint it gives you).
 
-`VERSION` works the same way as in `base_controller_setup.sh`: `latest` (default) resolves via `https://dl.k8s.io/release/stable.txt`; an explicit version (e.g. `1.33.0`, `v1.33.0`, `1.33`) pins to a known release. Keep this in sync with the control-plane's version — `kubeadm join` and cluster operation both assume matching minor versions across nodes.
+`VERSION` works the same way as in `k8s-setup controller install`: `latest` (default) resolves via `https://dl.k8s.io/release/stable.txt`; an explicit version (e.g. `1.33.0`, `v1.33.0`, `1.33`) pins to a known release. Keep this in sync with the control-plane's version — `kubeadm join` and cluster operation both assume matching minor versions across nodes.
 
 Script uses `set -e` — stops on first error, so it won't continue provisioning on top of a failed step.
 
 ## What it does, and why
 
 **Step 1 — Install kubelet, kubeadm, kubectl**
-- Same as `base_controller_setup.sh`: adds `/etc/apt/keyrings`, imports the Kubernetes repo's signing key, registers the repo for the resolved `v<major.minor>` channel, and resolves the exact package version string via `apt-cache madison` (the repo appends a build revision, e.g. `1.33.0-1.1`).
+- Same as `k8s-setup controller install`: adds `/etc/apt/keyrings`, imports the Kubernetes repo's signing key, registers the repo for the resolved `v<major.minor>` channel, and resolves the exact package version string via `apt-cache madison` (the repo appends a build revision, e.g. `1.33.0-1.1`).
 - `apt-mark hold` pins the installed versions so a routine `apt upgrade` can't silently bump them — version skew across a cluster's nodes breaks things.
 
 **Step 2 — Disable swap, load kernel modules**
@@ -52,5 +50,5 @@ Script uses `set -e` — stops on first error, so it won't continue provisioning
 
 ## Notes / Caveats
 
-- This script only prepares the node — it does not join it to a cluster. Run the `kubeadm join ...` command printed by `base_controller_setup.sh` (or `kubeadm token create --print-join-command` on the control-plane) after this script completes.
+- This command only prepares the node — it does not join it to a cluster. Run the `kubeadm join ...` command printed by `k8s-setup controller install` (or `k8s-setup controller join-command` on the control-plane) after this completes.
 - Keep `VERSION` matched to the control-plane's Kubernetes version to avoid skew.
