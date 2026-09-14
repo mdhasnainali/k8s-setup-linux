@@ -35,6 +35,14 @@ Usage:
   k8s-setup version                                     Print CLI version
   k8s-setup help                                        Show this help
 
+Install-time choices (prompted for, or passed as flags to skip the prompt):
+  --cri=containerd|crio|docker            Container runtime
+  --cni=flannel|calico|cilium|none        Pod network (controller only)
+  --csi=none|local-path|nfs|longhorn      Storage provisioner
+  -y, --yes                               Take every default, ask nothing
+
+Run any subcommand with --help for its full options.
+
 Docs: $ROOT_DIR/docs
 EOF
 }

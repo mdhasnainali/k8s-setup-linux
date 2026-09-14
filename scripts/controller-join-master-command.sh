@@ -19,6 +19,18 @@ echo ""
 
 JOIN_COMMAND=$(sudo kubeadm token create --print-join-command)
 
+# kubeadm omits --cri-socket from the printed command, and it's only optional
+# when exactly one runtime is detectable on the joining node. Append the socket
+# this cluster was built with so CRI-O / cri-dockerd nodes join cleanly too.
+STATE_FILE="/etc/k8s-setup/node.conf"
+if [[ -r "$STATE_FILE" ]]; then
+    # shellcheck disable=SC1090
+    . "$STATE_FILE"
+    if [[ -n "${K8S_SETUP_CRI_SOCKET:-}" && "$JOIN_COMMAND" != *--cri-socket* ]]; then
+        JOIN_COMMAND="$JOIN_COMMAND --cri-socket $K8S_SETUP_CRI_SOCKET"
+    fi
+fi
+
 echo "Uploading cluster certificates to generate certificate key..."
 echo ""
 

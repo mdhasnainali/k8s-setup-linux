@@ -3,56 +3,103 @@ set -e   # abort on first error, half-cleaned node worse than none
 
 # Usage: k8s-setup controller uninstall
 # Reverses controller-install.sh: resets kubeadm, purges kubelet/kubeadm/
-# kubectl/containerd, removes repos/keys/config, restores swap, and drops the
-# sysctl/kernel-module changes made for pod networking.
+# kubectl and (optionally) the container runtime, removes repos/keys/config,
+# restores swap, and drops the sysctl/kernel-module changes made for pod
+# networking.
+#
+# Which runtime and network add-on to undo is read from the state file that
+# install wrote; if that's missing you get asked.
+
+SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" > /dev/null 2>&1 && pwd)"
+# shellcheck source=lib/common.sh
+. "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/cri.sh
+. "$SCRIPT_DIR/lib/cri.sh"
+# shellcheck source=lib/cni.sh
+. "$SCRIPT_DIR/lib/cni.sh"
+
 usage() {
-    echo "Usage: k8s-setup controller uninstall"
-    echo "  Tears down a control-plane node set up by 'k8s-setup controller install'."
-    echo "  Run as the regular (non-root) user - script uses sudo internally."
+    cat <<EOF
+Usage: k8s-setup controller uninstall [options]
+
+  Tears down a control-plane node set up by 'k8s-setup controller install'.
+  Run as the regular (non-root) user - the script uses sudo internally.
+
+Options:
+  --cri=NAME   Runtime to tear down: containerd | crio | docker
+               Only needed when $K8S_SETUP_STATE_FILE is missing.
+  -y, --yes    Non-interactive. Confirms the reset but keeps the runtime
+               installed; pass --purge-runtime to remove it too.
+  --purge-runtime
+               Also purge the container runtime and its repo/keys.
+  -h, --help   Show this help
+EOF
     exit 1
 }
 
-case "$1" in
-    -h|--help) usage ;;
-esac
+PURGE_RUNTIME=""
+ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        --purge-runtime) PURGE_RUNTIME=true ;;
+        *) ARGS+=("$arg") ;;
+    esac
+done
+parse_common_flags "${ARGS[@]+"${ARGS[@]}"}"
 
-read -p "This will reset kubeadm and remove Kubernetes from this node. Continue? [y/N]: " CONFIRM
-if [[ ! "$CONFIRM" =~ ^[Yy]$ ]]; then
+# Prefer what install recorded; fall back to a flag, then to a prompt.
+if state_load; then
+    CRI="${CRI:-$K8S_SETUP_CRI}"
+    CRI_SOCKET="${K8S_SETUP_CRI_SOCKET:-}"
+    log "Read node configuration from $K8S_SETUP_STATE_FILE (CRI: ${CRI:-unknown}, CNI: ${K8S_SETUP_CNI:-unknown})"
+else
+    warn "No $K8S_SETUP_STATE_FILE found - this node may predate it."
+    [[ -n "$CRI" ]] || CRI=$(prompt_choice "Which container runtime is installed?" "$CRI_DEFAULT" "${CRI_CHOICES[@]}")
+fi
+[[ -n "$CRI" ]] || CRI="$CRI_DEFAULT"
+validate_choice "--cri" "$CRI" "${CRI_CHOICES[@]}"
+# Recompute rather than trust a stale value if the state file was hand-edited.
+CRI_SOCKET=$(cri_socket "$CRI")
+
+# Interactively this defaults to "no" - it's destructive. -y is an explicit
+# opt-in to the teardown, so it doesn't get to fall through to that default.
+if [[ "$ASSUME_YES" == true ]]; then
+    log "Non-interactive mode: proceeding with teardown."
+elif ! confirm "This will reset kubeadm and remove Kubernetes from this node. Continue?" N; then
     echo "Aborted."
     exit 0
 fi
 
-read -p "Also purge containerd (container runtime) and its repo/keys? [y/N]: " REMOVE_RUNTIME
-if [[ "$REMOVE_RUNTIME" =~ ^[Yy]$ ]]; then
-    PURGE_RUNTIME=true
-else
-    PURGE_RUNTIME=false
-    echo "Skipping containerd removal - runtime stays installed."
+if [[ -z "$PURGE_RUNTIME" ]]; then
+    if confirm "Also purge the container runtime ($CRI) and its repo/keys?" N; then
+        PURGE_RUNTIME=true
+    else
+        PURGE_RUNTIME=false
+        echo "Skipping runtime removal - $CRI stays installed."
+    fi
 fi
 
 SCRIPT_START=$(date +%s)
 
-echo "Step 1: kubeadm reset"
+log "Step 1: kubeadm reset"
 # Tears down kubelet/etcd state, removes /etc/kubernetes, and undoes most of
 # what `kubeadm init` set up. --cri-socket must match what init used, else
-# reset can't find/stop the right containerd sandbox.
+# reset can't find/stop the right sandbox.
 if command -v kubeadm &> /dev/null; then
-    sudo kubeadm reset -f --cri-socket unix:///run/containerd/containerd.sock
+    sudo kubeadm reset -f --cri-socket "$CRI_SOCKET"
 else
     echo "kubeadm not found, skipping kubeadm reset."
 fi
 
-echo "Step 2: Remove CNI and kube configs"
-# Flannel/CNI leftovers on disk - not removed by kubeadm reset.
-sudo rm -rf /etc/cni/net.d
-sudo rm -rf /var/lib/cni
-sudo ip link delete cni0 2>/dev/null || true
-sudo ip link delete flannel.1 2>/dev/null || true
+log "Step 2: Remove CNI and kube configs"
+# Plugin leftovers on disk and the interfaces they created - kubeadm reset
+# clears neither.
+cni_cleanup
 
 # Admin kubeconfig copied into the user's home during setup.
 rm -rf "$HOME/.kube"
 
-echo "Step 3: Remove iptables/ipvs rules left by kube-proxy"
+log "Step 3: Remove iptables/ipvs rules left by kube-proxy"
 # kubeadm reset doesn't flush these - stale rules can interfere with a
 # future cluster on the same node.
 if command -v iptables &> /dev/null; then
@@ -62,7 +109,7 @@ if command -v iptables &> /dev/null; then
     sudo iptables -X
 fi
 
-echo "Step 4: Purge kubelet, kubeadm, kubectl"
+log "Step 4: Purge kubelet, kubeadm, kubectl"
 if dpkg -l | grep -qE '^[hi]i\s+(kubelet|kubeadm|kubectl)\s'; then
     # Packages are held (apt-mark hold in setup) - unhold before purge so
     # apt will actually remove them instead of refusing.
@@ -72,21 +119,14 @@ else
     echo "kubelet/kubeadm/kubectl not installed, skipping."
 fi
 
-echo "Step 5: Purge containerd and its config"
+log "Step 5: Purge the container runtime ($CRI) and its config"
 if [ "$PURGE_RUNTIME" = true ]; then
-    if dpkg -l | grep -q '^ii\s\+containerd.io'; then
-        sudo systemctl stop containerd 2>/dev/null || true
-        sudo apt-get purge -y containerd.io
-    else
-        echo "containerd.io not installed, skipping."
-    fi
-    sudo rm -rf /etc/containerd
-    sudo rm -rf /var/lib/containerd
+    cri_purge "$CRI"
 else
-    echo "Skipped (user opted to keep container runtime)."
+    echo "Skipped (keeping the container runtime installed)."
 fi
 
-echo "Step 6: Remove Kubernetes apt repo/keys"
+log "Step 6: Remove Kubernetes apt repo/keys"
 sudo rm -f /etc/apt/sources.list.d/kubernetes.list
 sudo rm -f /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 if [ "$PURGE_RUNTIME" = true ]; then
@@ -96,16 +136,20 @@ if [ "$PURGE_RUNTIME" = true ]; then
 fi
 sudo apt-get update -y
 
-echo "Step 7: Restore swap and kernel/sysctl changes"
+log "Step 7: Restore swap and kernel/sysctl changes"
 # Uncomment swap lines that setup commented out in /etc/fstab.
 sudo sed -i -E '/^#.* swap /s/^#//' /etc/fstab
 sudo swapon -a || echo "No swap device to re-enable (or already enabled)."
 
-sudo rm -f /etc/modules-load.d/containerd.conf
+# containerd.conf is the name older versions of this script used.
+sudo rm -f /etc/modules-load.d/kubernetes.conf /etc/modules-load.d/containerd.conf
 sudo rm -f /etc/sysctl.d/kubernetes.conf
 sudo sysctl --system > /dev/null
 
-echo "Step 8: Autoremove unused dependencies"
+log "Step 8: Remove the k8s-setup state file"
+sudo rm -rf "$K8S_SETUP_STATE_DIR"
+
+log "Step 9: Autoremove unused dependencies"
 sudo apt-get autoremove -y
 
 SCRIPT_END=$(date +%s)
