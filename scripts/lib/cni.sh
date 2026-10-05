@@ -13,7 +13,7 @@ CNI_CHOICES=(
     "cilium|Cilium - eBPF dataplane, NetworkPolicy and observability"
     "none|Skip - install a CNI yourself after init"
 )
-CNI_DEFAULT="flannel"
+CNI_DEFAULT="calico"
 
 cni_prompt() {
     if [[ -n "$CNI" ]]; then
@@ -29,7 +29,7 @@ _cni_default_pod_cidr() {
     case "$1" in
         # Flannel's manifest hardcodes this; Cilium is told to use it below.
         flannel|cilium|none) echo "10.244.0.0/16" ;;
-        # calico.yaml's built-in default pool.
+        # Calico's documented default pool.
         calico)              echo "192.168.0.0/16" ;;
         *) die "unknown CNI: $1" ;;
     esac
@@ -58,22 +58,48 @@ _cni_apply_flannel() {
 }
 
 _cni_apply_calico() {
-    local version
+    local version base i
     version=$(curl -fsSL "https://api.github.com/repos/projectcalico/calico/releases/latest" \
         | grep -m1 '"tag_name"' | cut -d'"' -f4)
     [[ -n "$version" ]] || die "could not determine the latest Calico release"
+    base="https://raw.githubusercontent.com/projectcalico/calico/${version}/manifests"
 
-    log "Applying Calico ${version} (pod CIDR ${POD_CIDR})"
-    # calico.yaml ships CALICO_IPV4POOL_CIDR commented out, defaulting to
-    # 192.168.0.0/16. Uncomment it and pin it to whatever kubeadm init used, so
-    # the IP pool can't drift from the cluster's pod CIDR.
-    curl -fsSL "https://raw.githubusercontent.com/projectcalico/calico/${version}/manifests/calico.yaml" \
-        | awk -v cidr="$POD_CIDR" '
-            /# - name: CALICO_IPV4POOL_CIDR/ { sub(/# /, ""); print; pending = 1; next }
-            pending && /#   value:/ { sub(/#   value: .*/, "  value: \"" cidr "\""); print; pending = 0; next }
-            { pending = 0; print }
-          ' \
-        | kubectl apply -f -
+    log "Installing Calico ${version} via the Tigera operator (pod CIDR ${POD_CIDR})"
+    # `create`, not `apply`: the CRD bundle exceeds apply's annotation size limit.
+    kubectl create -f "${base}/operator-crds.yaml"
+    kubectl create -f "${base}/tigera-operator.yaml"
+
+    # Pool pinned to the CIDR kubeadm init used; VXLANCrossSubnet works on any L2/L3 network.
+    kubectl create -f - <<EOF
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  calicoNetwork:
+    ipPools:
+    - name: default-ipv4-ippool
+      blockSize: 26
+      cidr: ${POD_CIDR}
+      encapsulation: VXLANCrossSubnet
+      natOutgoing: Enabled
+      nodeSelector: all()
+---
+apiVersion: operator.tigera.io/v1
+kind: APIServer
+metadata:
+  name: default
+spec: {}
+EOF
+
+    log "Waiting for Calico to become ready..."
+    # tigerastatus objects appear only after the operator reconciles them.
+    for i in $(seq 60); do
+        kubectl get tigerastatus calico &> /dev/null && break
+        sleep 5
+    done
+    kubectl wait --for=condition=Available tigerastatus --all --timeout=600s \
+        || warn "Calico not Available yet; check: kubectl get tigerastatus"
 }
 
 _cni_apply_cilium() {
@@ -107,7 +133,7 @@ _cni_apply_cilium() {
 cni_cleanup() {
     sudo rm -rf /etc/cni/net.d /var/lib/cni
     local link
-    for link in cni0 flannel.1 vxlan.calico cilium_host cilium_net cilium_vxlan; do
+    for link in cni0 flannel.1 vxlan.calico tunl0 cilium_host cilium_net cilium_vxlan; do
         sudo ip link delete "$link" 2>/dev/null || true
     done
 }

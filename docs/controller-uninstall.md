@@ -31,7 +31,7 @@ Removing the runtime is a **separate, opt-in** decision — the second prompt de
 - Undoes most of what `kubeadm init` set up: stops kubelet, cleans up `/etc/kubernetes`, and tears down local etcd data. The `--cri-socket` comes from the recorded runtime, so it targets the right sandbox whether that's containerd, CRI-O, or cri-dockerd. Skipped if `kubeadm` isn't installed (already cleaned up, or setup never ran).
 
 **Step 2 — Remove CNI and kube configs**
-- `kubeadm reset` doesn't touch CNI plugin state, so the plugin's `/etc/cni/net.d` and `/var/lib/cni` are removed directly, along with the `cni0`, `flannel.1`, `vxlan.calico`, and `cilium_*` interfaces the plugin created.
+- `kubeadm reset` doesn't touch CNI plugin state, so the plugin's `/etc/cni/net.d` and `/var/lib/cni` are removed directly, along with the `cni0`, `flannel.1`, `vxlan.calico`, `tunl0`, and `cilium_*` interfaces the plugin created.
 - Removes `$HOME/.kube`, the admin kubeconfig setup copied in at its Step 6.
 
 **Step 3 — Flush iptables/ipvs rules**

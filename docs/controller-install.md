@@ -39,7 +39,7 @@ The script asks three questions before it changes anything on the box, prints th
 | Prompt | Options | Default |
 |---|---|---|
 | Container runtime (CRI) | `containerd`, `crio`, `docker` | `containerd` |
-| Pod network (CNI) | `flannel`, `calico`, `cilium`, `none` | `flannel` |
+| Pod network (CNI) | `flannel`, `calico`, `cilium`, `none` | `calico` |
 | Storage (CSI) | `none`, `local-path`, `nfs`, `longhorn` | `none` |
 
 Each prompt has a matching flag that skips it, so the same install is reproducible and scriptable:
@@ -88,14 +88,14 @@ Kubernetes removed in-tree Docker support in 1.24 — the `docker` option is Doc
 The chosen CIDR is what `kubeadm init --pod-network-cidr` receives, and the same value is pushed into the plugin's own config, so the two can't drift:
 
 - Flannel's manifest hardcodes `10.244.0.0/16` in its `net-conf.json` — the script rewrites it when you override the CIDR.
-- Calico ships `CALICO_IPV4POOL_CIDR` commented out; the script uncomments it and pins it to the cluster's CIDR.
+- Calico is installed through the Tigera operator (`operator-crds.yaml` + `tigera-operator.yaml`, via `kubectl create` since the CRDs are too big for `apply`). The script then creates the `Installation` resource with its IP pool set to the cluster's CIDR (VXLANCrossSubnet encapsulation) and waits for `kubectl get tigerastatus` to report Available.
 - Cilium's cluster-pool IPAM defaults to `10.0.0.0/8`; the script sets `ipam.operator.clusterPoolIPv4PodCIDRList` to the cluster's CIDR instead.
 
 Manifests are fetched at the plugin's current release, not a version pinned in this repo.
 
 Cloud-managed clusters use their own: **AWS VPC CNI** on EKS, **Azure CNI** on AKS. Neither applies to a self-managed kubeadm cluster.
 
-Swapping CNIs later: remove the old plugin's manifest and its leftover interfaces (`cni0`, `flannel.1`, `vxlan.calico`, `cilium_*` — see `k8s-setup controller uninstall` Step 2), then apply the replacement, keeping its pod CIDR matched to `--pod-network-cidr`.
+Swapping CNIs later: remove the old plugin's manifest and its leftover interfaces (`cni0`, `flannel.1`, `vxlan.calico`, `tunl0`, `cilium_*` — see `k8s-setup controller uninstall` Step 2), then apply the replacement, keeping its pod CIDR matched to `--pod-network-cidr`.
 
 ### Storage (CSI)
 

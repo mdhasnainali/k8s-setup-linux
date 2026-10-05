@@ -50,7 +50,7 @@ k8s-setup worker uninstall
 | Layer | Options | Default | Flag |
 |---|---|---|---|
 | **CRI** — container runtime | `containerd`, `crio`, `docker` (Docker Engine + cri-dockerd) | `containerd` | `--cri=` |
-| **CNI** — pod network | `flannel`, `calico`, `cilium`, `none` | `flannel` | `--cni=` |
+| **CNI** — pod network | `flannel`, `calico`, `cilium`, `none` | `calico` | `--cni=` |
 | **CSI** — storage | `none`, `local-path`, `nfs`, `longhorn` | `none` | `--csi=` |
 
 ```bash

@@ -31,7 +31,7 @@ Removing the runtime is a **separate, opt-in** decision — the second prompt de
 - Undoes a prior `kubeadm join`: stops kubelet and cleans up `/etc/kubernetes`. The `--cri-socket` comes from the recorded runtime, so it targets the right sandbox whether that's containerd, CRI-O, or cri-dockerd. Skipped if `kubeadm` isn't installed (already cleaned up, setup never ran, or the node never joined).
 
 **Step 2 — Remove CNI leftovers**
-- Joining a cluster writes CNI plugin state to the node; `kubeadm reset` doesn't touch it, so `/etc/cni/net.d` and `/var/lib/cni` are removed directly, along with the `cni0`, `flannel.1`, `vxlan.calico`, and `cilium_*` interfaces the CNI plugin created.
+- Joining a cluster writes CNI plugin state to the node; `kubeadm reset` doesn't touch it, so `/etc/cni/net.d` and `/var/lib/cni` are removed directly, along with the `cni0`, `flannel.1`, `vxlan.calico`, `tunl0`, and `cilium_*` interfaces the CNI plugin created.
 
 **Step 3 — Flush iptables/ipvs rules**
 - kube-proxy's iptables rules (NAT/mangle tables, custom chains) survive `kubeadm reset` and can conflict with a future join on the same node, so they're flushed here.
